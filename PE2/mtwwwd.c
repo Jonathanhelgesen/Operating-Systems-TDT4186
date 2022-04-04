@@ -11,9 +11,9 @@
 #include "bbuffer.h"
 
 #define MAXSIZE (8092 * 1024)
-#define PORT 8000
-#define THREADS 4
-#define BUFSLOT 10
+// #define PORT 8000
+// #define THREADS 4
+// #define BUFSLOT 10
 
 char body[MAXSIZE], message[MAXSIZE], buffer[MAXSIZE];
 
@@ -30,29 +30,34 @@ const char *parseRequest(char *request)
     token = strtok(request, " ");
     bzero(&request, sizeof(request));
     token = strtok(NULL, " ");
-    if (token[0] == '/')
-    {
-        memmove(token, token + 1, strlen(token));
-    }
     return token;
 }
 
-void getHtml(char *path, char text[])
+char *getHtml(char *rootDir, char *path)
 {
-    FILE *htmlData = fopen(path, "r");
+    char* filepath = malloc(strlen(rootDir) + strlen(path) + 1);
+    strcpy(filepath, rootDir);
+    strcat(filepath, path);
+
+    FILE *htmlData = fopen(filepath, "r");
+
+    static char responseData[8000];
     char line[100];
-    char responseData[8000];
-    bzero(responseData, sizeof(responseData));
     bzero(line, sizeof(line));
+
     while (fgets(line, 100, htmlData) != 0)
     {
         strcat(responseData, line);
     }
-    strcat(text, responseData);
+    
+    return responseData;
 }
 
 
-void *worker(BNDBUF *buf) {
+void *worker(void** args) {
+
+    char* rootDir = (char *) args[0];
+    BNDBUF* buf = (BNDBUF *) args[1];
 
     int socket_fd = bb_get(buf);
 
@@ -89,11 +94,8 @@ void *worker(BNDBUF *buf) {
         return NULL;
     }
 
-    getHtml(path, htmlCode);
-
-
     // Generate response
-    snprintf(body, sizeof(body), "%s", htmlCode);
+    snprintf(body, sizeof(body), "%s", getHtml(rootDir, path));
     snprintf(message, sizeof(message),
                 "HTTP/0.9 200 OK\n"
                 "Content-Type: text/html\n"
@@ -115,15 +117,13 @@ void signal_callback(int signum) {
     exit(signum);
 }
 
-int main()
+int main(int argc, char **argv)
 {
 
-    // char text[300];
-    // bzero(text, sizeof(text));
-
-    // getHtml("doc/hello2.html", text);
-
-    // printf("%s", text);
+    char *ROOTDIR = argv[1];
+    const int PORT = atoi(argv[2]);
+    const int THREADS = atoi(argv[3]);
+    const int BUFSLOT = atoi(argv[4]);
 
     signal(SIGINT, signal_callback);
 
@@ -168,7 +168,12 @@ int main()
 
         pthread_t thread = threads[i % THREADS];
 
-        pthread_create( &thread, NULL, worker, buf);
+        void *args[2] = {
+            ROOTDIR,
+            buf
+        };
+
+        pthread_create( &thread, NULL, worker, args);
         pthread_join(thread, NULL);
 
         i++;
